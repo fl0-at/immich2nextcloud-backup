@@ -1,4 +1,4 @@
-# Immich → Nextcloud Backup Bridge – Specification
+# immich2nextcloud-backup – Specification
 
 ## Overview
 
@@ -7,9 +7,9 @@ This project provides a small, containerized tool that periodically exports medi
 The core idea:
 
 - For each Immich user:
-  - Use that user’s Immich API key to export all of their media (photos + videos) via ``immich-go``.
-  - Store the export in a local directory structured by ``YYYY/MM/DD``.
-  - Sync that directory into the same user’s Nextcloud account under ``Photos/immich-backup/YYYY/MM/DD`` via ``rclone`` over WebDAV.
+  - Use that user’s Immich API key to export all of their media (photos + videos) via `immich-go`.
+  - Store the export in a local directory structured by `YYYY/MM/DD`.
+  - Sync that directory into the same user’s Nextcloud account under `Photos/immich-backup/YYYY/MM/DD` via `rclone` over WebDAV.
 - This runs inside a Docker container, triggered either manually or via an external scheduler (cron/systemd on the host).
 
 Immich remains the primary photo app; Nextcloud acts as a per‑user off-site backup of raw media.
@@ -24,29 +24,29 @@ Immich remains the primary photo app; Nextcloud acts as a per‑user off-site ba
 
 The project consists of:
 
-- ``Dockerfile``
+- `Dockerfile`
   - Builds a minimal image that includes:
-    - ``bash``
-    - ``immich-go`` CLI
-    - ``rclone``
-  - Copies in ``backup.sh`` as the container entrypoint.
-  - Defines ``/data`` as a mount point for exported media.
-- ``backup.sh``
+    - `bash`
+    - `immich-go` CLI
+    - `rclone`
+  - Copies in `backup.sh` as the container entrypoint.
+  - Defines `/data` as a mount point for exported media.
+- `backup.sh`
   - Shell script that:
     - Reads configuration from environment variables.
     - Loops over a configured list of users.
     - For each user:
-      - Calls ``immich-go archive from-immich`` to export the user's media into ``/data/<user>/YYYY/MM/DD``.
-      - Creates a temporary ``rclone.conf`` for that user (using Nextcloud username + app password).
-      - Syncs ``/data/<user>/`` to ``Nextcloud://Photos/immich-backup`` in that user’s account.
+      - Calls `immich-go archive from-immich` to export the user's media into `/data/<user>/YYYY/MM/DD`.
+      - Creates a temporary `rclone.conf` for that user (using Nextcloud username + app password).
+      - Syncs `/data/<user>/` to `Nextcloud://Photos/immich-backup` in that user’s account.
     - Exits non‑zero on hard errors.
-- ``compose.yaml``
-  - Example Docker Compose v2 file that:
-    - Defines the ``immich2nextcloud-backup`` service.
+- `compose.yml`
+  - Docker Compose v2 file that:
+    - Defines the `immich2nextcloud-backup` service.
     - Passes all necessary environment variables.
-    - Mounts a host directory (e.g. ``/srv/immich-exports``) to ``/data`` in the container.
-    - Uses ``restart: "no"`` so it can be triggered by ``docker compose run`` or a timer.
-- ``README.md``
+    - Mounts a host directory (e.g. `/srv/immich-exports`) to `/data` in the container.
+    - Uses `restart: "no"` so it can be triggered by `docker compose run` or a timer.
+- `README.md`
   - Describes what the project does.
   - Documents configuration and environment variables.
   - Provides basic usage examples and scheduling hints.
@@ -55,7 +55,7 @@ The project consists of:
 
 ### High-level flow
 
-Pseudocode for ``backup.sh``:
+Pseudocode for `backup.sh`:
 
 ```bash
 read IMMICH_SERVER
@@ -100,27 +100,27 @@ for each USER in USER_LIST:
 
 ### Date-based structure
 
-- ``immich-go`` must be called with template options so exported media follows:
-  - Root: ``/data/<user>/``
-  - Subfolders: ``YYYY/MM/DD`` based on capture date.
+- `immich-go` must be called with template options so exported media follows:
+  - Root: `/data/<user>/`
+  - Subfolders: `YYYY/MM/DD` based on capture date.
   - Files: original filename where possible.
 - Resulting Nextcloud path for a user:
-  - ``Photos/immich-backup/YYYY/MM/DD/<filename>``
+  - `Photos/immich-backup/YYYY/MM/DD/<filename>`
 
 ### Idempotency
 
-- For backup consistency, ``rclone sync`` is preferred:
+- For backup consistency, `rclone sync` is preferred:
   - Remote reflects the local export exactly (including deletions).
-- Alternatively, users may switch to ``rclone copy`` if they want append-only behavior.
-- This behavior should be a simple toggle in ``backup.sh``, e.g. via ``RCLONE_MODE`` env var (``sync`` vs ``copy``).
+- Alternatively, users may switch to `rclone copy` if they want append-only behavior.
+- This behavior should be a simple toggle in `backup.sh`, e.g. via `RCLONE_MODE` env var (`sync` vs `copy`).
 
 ### Error handling
 
-- Missing required top-level env vars (``IMMICH_SERVER``, ``NC_BASE_URL``, ``USER_LIST``) should cause the script to exit with a non‑zero status and a clear message.
+- Missing required top-level env vars (`IMMICH_SERVER`, `NC_BASE_URL`, `USER_LIST`) should cause the script to exit with a non‑zero status and a clear message.
 - For each user:
   - If any per-user env is missing, log a warning and skip that user.
-  - If ``immich-go`` fails, log the error and continue with the next user, but exit non‑zero at end.
-  - If ``rclone`` fails, log the error similarly.
+  - If `immich-go` fails, log the error and continue with the next user, but exit non‑zero at end.
+  - If `rclone` fails, log the error similarly.
 - Output should be human-readable logs to stdout/stderr.
 
 ## Configuration
@@ -129,64 +129,65 @@ for each USER in USER_LIST:
 
 Global:
 
-- ``IMMICH_SERVER``
-  - Base URL of the Immich instance, e.g. ``https://immich.example.com``.
-- ``NC_BASE_URL``
-  - Base URL of the Nextcloud instance, e.g. ``https://cloud.example.com``.
-- ``USER_LIST``
-  - Space-separated list of logical user identifiers, e.g. ``USER_LIST="alice bob charlie"``.
+- `IMMICH_SERVER`
+  - Base URL of the Immich instance, e.g. `https://immich.example.com`.
+- `NC_BASE_URL`
+  - Base URL of the Nextcloud instance, e.g. `https://cloud.example.com`.
+- `USER_LIST`
+  - Space-separated list of logical user identifiers, e.g. `USER_LIST="alice bob charlie"`.
   - These identifiers are used to construct per-user env var names.
+  - Identifiers should be lowercase `[a-z0-9_-]` and are used literally in `IMMICH_API_KEY_<id>` etc.
 
-Per-user (for each entry in ``USER_LIST``):
+Per-user (for each entry in `USER_LIST`):
 
-- ``IMMICH_API_KEY_<user>``
+- `IMMICH_API_KEY_<user>`
   - Immich API key created in that user’s Immich account.
-- ``NC_USER_<user>``
+- `NC_USER_<user>`
   - Nextcloud login name (used in WebDAV path and HTTP auth).
-- ``NC_PASS_<user>``
+- `NC_PASS_<user>`
   - Nextcloud app password for that user (not the main password).
 
 Optional:
 
-- ``RCLONE_BWLIMIT``
-  - Bandwidth limit for rclone, e.g. ``8M``. Default: ``8M``.
-- ``RCLONE_TRANSFERS``
-  - Number of simultaneous file transfers. Default: ``4``.
-- ``RCLONE_CHECKERS``
-  - Number of parallel checks. Default: ``4``.
-- ``RCLONE_MODE``
-  - ``sync`` (default) or ``copy``.
+- `RCLONE_BWLIMIT`
+  - Bandwidth limit for rclone, e.g. `8M`. Default: `8M`.
+- `RCLONE_TRANSFERS`
+  - Number of simultaneous file transfers. Default: `4`.
+- `RCLONE_CHECKERS`
+  - Number of parallel checks. Default: `4`.
+- `RCLONE_MODE`
+  - `sync` (default) or `copy`.
 
 Volumes
 
-- ``/data`` – directory for exports; should be backed by persistent storage on the host (e.g. NAS mount or local disk).
+- `/data` – directory for exports; should be backed by persistent storage on the host (e.g. NAS mount or local disk).
 
-## Dockerfile requirements
+### Dockerfile requirements
 
-- Base image: minimal Linux (e.g. ``alpine:3.x``).
+- Base image: minimal Linux (e.g. `alpine:3.x`).
 - Install:
-  - ``bash``
-  - ``ca-certificates``
-  - ``curl``
-- Install ``rclone`` by downloading the official Linux amd64 build and placing it into ``/usr/local/bin/rclone``.
-- Install ``immich-go`` by downloading a configurable version (via ``IMMICH_GO_VERSION`` build arg or env) from GitHub releases and placing it at ``/usr/local/bin/immich-go``.
-- Copy ``backup.sh`` into ``/app/backup.sh`` and ``chmod +x``.
-- ``WORKDIR /app``.
-- ``VOLUME ["/data"]``.
-- ``ENTRYPOINT ["/app/backup.sh"]``.
+  - `bash`
+  - `ca-certificates`
+  - `curl`
+- Install `rclone` by downloading the official Linux amd64 build and placing it into `/usr/local/bin/rclone`.
+- Install `immich-go` by downloading a configurable version (via `IMMICH_GO_VERSION` build arg or env) from GitHub releases and placing it at `/usr/local/bin/immich-go`.
+- Copy `backup.sh` into `/app/backup.sh` and `chmod +x`.
+- `WORKDIR /app`.
+- `VOLUME ["/data"]`.
+- `ENTRYPOINT ["/app/backup.sh"]`.
 
-## Compose file (``compose.yaml``)
+### Compose file (`compose.yml`)
 
 Example service definition:
 
-- Service name: ``immich2nextcloud-backup``.
-- Image: ``your-dockerhub-user/immich2nextcloud-backup:latest`` (or ``build: .`` for local builds).
-- ``restart: "no"`` (so it doesn’t loop; triggered externally).
-- ``environment``:
-  - Global vars: ``IMMICH_SERVER``, ``NC_BASE_URL``, ``USER_LIST``, ``RCLONE_*`` if needed.
-  - Per-user vars: ``IMMICH_API_KEY_alice``, ``NC_USER_alice``, ``NC_PASS_alice``, etc.
-- ``volumes``:
-  - ``- /srv/immich-exports:/data``.
+- Service name: `immich2nextcloud-backup`.
+- Image: `your-dockerhub-user/immich2nextcloud-backup:latest` (or `build: .` for local builds).
+- `restart: "no"` (so it doesn’t loop; triggered externally).
+- `environment`:
+  - Global vars: `IMMICH_SERVER`, `NC_BASE_URL`, `USER_LIST`, `RCLONE_*` if needed.
+  - Per-user vars: `IMMICH_API_KEY_alice`, `NC_USER_alice`, `NC_PASS_alice`, etc.
+- `volumes`:
+  - `- /srv/immich-exports:/data`.
 
 Usage examples in README:
 
@@ -206,11 +207,11 @@ docker compose run --rm immich2nextcloud-backup
 The README should include:
 
 1. What it does
-   - Brief description of Immich → Nextcloud backup per user.
+   - Brief description of immich2nextcloud-backup.
 2. Prerequisites
    - Running Immich instance.
    - Nextcloud instance with user accounts.
-   - Docker + Docker Compose v2 (``docker compose``).
+   - Docker + Docker Compose v2 (`docker compose`).
 3. How to get Immich API keys
    - Instructions to create a token per user in Immich UI.
 4. How to get Nextcloud usernames and app passwords
@@ -220,8 +221,50 @@ The README should include:
    - Explanation of environment variables and USER_LIST.
    - Note that passwords should be app passwords, not main passwords.
 6. Running
-   - ``docker compose run --rm immich2nextcloud-backup``.
+   - `docker compose run --rm immich2nextcloud-backup`.
    - Example of using cron or systemd timer on the host.
 7. Limitations
    - Media-only backups.
    - No restore tooling beyond raw media presence in Nextcloud.
+   - A notice that this container will run a _full export_ everytime it runs
+8. Security notice
+   - Reminder to _never_ commit API keys, passwords and other secrets to the repo
+   - Suggestion to store these in an _uncommitted!_ `.env` file or to make use of Docker secrets.
+
+### Clarifications, Security, and Additional Options
+
+The following clarifications and optional settings are recommended to make the implementation safer, more predictable, and easier to automate.
+
+- **Versions & verification**: Add build arg and env references for exact binary versions (for example: `IMMICH_GO_VERSION`, `RCLONE_VERSION`) and verify downloads using SHA256 checksums where available.
+- **Export strategy / incremental exports**: Specify whether the export is intended to be full every run or incremental. If incremental is desired, add an option such as `IMMICH_EXPORT_SINCE` (date) or a `--since-last-run` mode; otherwise document that full exports may be repeated and rely on `rclone` deduping/compare behavior.
+- **Retention / cleanup**: Define what happens to `/data/<user>` after sync. Add an optional `PRUNE_AFTER_DAYS` env var (integer) or explicit `CLEANUP` toggle so hosts can avoid unbounded disk growth. If enabled, the script should remove local export folders older than `PRUNE_AFTER_DAYS`.
+- **Env var naming and allowed characters**: Constrain `USER_LIST` identifiers so they map predictably to env var names (for example: lowercase `a-z0-9_-` only). Document that identifiers are case-sensitive and will be interpolated literally into `IMMICH_API_KEY_<id>`, `NC_USER_<id>`, and `NC_PASS_<id>`.
+- **Security for credentials**: Document recommended handling for `NC_PASS_*` and `IMMICH_API_KEY_*` (prefer Docker secrets, Docker Compose `secrets`, or a host-mounted `rclone.conf` with restricted permissions). The script must securely erase any temporary `rclone` config files after use (e.g., `shred` or overwrite then remove) and avoid printing secrets to logs.
+- **Error semantics, retries & exit codes**: Define explicit exit codes and retry behavior:
+  - `0` = success (all users processed without failures)
+  - `1` = partial failures (one or more users failed during export/sync)
+  - `2` = fatal configuration error (missing top-level env vars)
+  - Add configurable retry policy for transient errors (e.g., `RETRY_COUNT`, `RETRY_DELAY_SECONDS`) applied to `immich-go` and `rclone` operations.
+- **Idempotency & deletion behavior**: Make the `RCLONE_MODE` default explicit and conservative. Because `rclone sync` deletes remote files not present locally, document the default and allow opting into `copy` to preserve remote files. Consider making the default `copy` for safety, or require an explicit `RCLONE_MODE=sync` in production setups.
+- **Logging & observability**: Add `LOG_LEVEL` (e.g., `info`, `warn`, `error`, `debug`) and per-user log prefixes and timestamps. Recommend an optional `JSON_LOG` toggle for machine parsing and include a `--dry-run`/`TEST_MODE` that runs `rclone --dry-run` for validation.
+- **Docker image details**: Document target CPU architecture (e.g., amd64) and recommend running the container as a non-root user or mapping UID/GID to avoid permission issues on mounted `/data` volumes. Also mention how to pass `IMMICH_GO_VERSION` as a build-arg.
+- **CLI flag confirmation**: Verify the actual `immich-go` CLI option names used in the pseudocode and document the exact template tokens supported by `immich-go` (e.g., `YYYY`, `MM`, `DD`, `{originalFileName}`) so generated code uses the correct flags.
+- **Privacy notice**: Add a short note that exporting user media and storing app passwords is a privacy-sensitive operation and should be done under appropriate policies and host protections.
+
+## Examples & templates
+
+Example files are provided for local runs and for templating env values. See `SAMPLE_compose.yml` and `.env.template` in the project root for copyable examples.
+
+## Future versions
+
+It is planned to introduce further features in future releases, once basic functionality has been tested OK and the project can be considered _solid_.
+
+For now, I'm collecting ideas in a simply unordered list here:
+
+- support for incremental backups instead of just full backups
+  - `immich-go` supports syntax like `--from-date-range`
+  - new env vars could be introduced, like:
+    - `IMMICH_FROM_DATE_RANGE`
+    - `IMMICH_INCREMENTAL_DAYS`
+      - i.e. `IMMICH_INCREMENTAL_DAYS=1` meaning "only assets from the last day"
+      - keeping this empty or at 0 will run a _full backup_ instead of _incremental_.

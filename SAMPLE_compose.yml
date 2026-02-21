@@ -1,0 +1,16 @@
+services:
+  immich2nextcloud-backup:
+    # Use 'image:' or 'build:' depending on your workflow. Example shows build for local development.
+    build: .
+    # image: your-dockerhub-user/immich2nextcloud-backup:latest
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      # Example overrides — prefer using .env or Docker secrets for credentials.
+      - RCLONE_MODE=${RCLONE_MODE}
+      - RCLONE_BWLIMIT=${RCLONE_BWLIMIT}
+    volumes:
+      - /srv/immich-exports:/data
+    # Optionally map UID/GID to avoid permission issues
+    # user: "1000:1000"
