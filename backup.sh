@@ -127,25 +127,43 @@ export_immich() {
   mkdir -p "$export_dir"
 
   log_info "$user" "Starting immich-go export to ${export_dir} ..."
+  local config_file="/tmp/immich-go-${user}.toml"
+
+  local dry_run_flag="false"
+  if [ "$TEST_MODE" = "true" ]; then
+    dry_run_flag="true"
+  fi
+
+  cat > "$config_file" <<EOF
+[archive]
+"write-to-folder" = "${export_dir}"
+"folder-template" = "{{DateYear}}/{{DateMonth}}/{{DateDay}}"
+"file-template" = "{{OriginalFileName}}"
+
+[archive.from-immich]
+"from-server" = "${IMMICH_SERVER}"
+"from-api-key" = "${!api_key_var}"
+"from-dry-run" = ${dry_run_flag}
+EOF
+  chmod 600 "$config_file"
 
   local cmd=(
     immich-go archive from-immich
-      --server="$IMMICH_SERVER"
-      --api-key="${!api_key_var}"
-      --output="$export_dir"
-      --folder-template="{{DateYear}}/{{DateMonth}}/{{DateDay}}"
-      --file-template="{{OriginalFileName}}"
+      --config "$config_file"
   )
 
   if [ "$TEST_MODE" = "true" ]; then
-    log_info "$user" "[dry-run] Would execute: ${cmd[*]}"
+    log_info "$user" "[dry-run] Would execute: ${cmd[*]} (config: ${config_file})"
+    rm -f "$config_file"
     return 0
   fi
 
   if run_with_retry "immich-go ($user)" "${cmd[@]}"; then
     log_info "$user" "immich-go export completed successfully."
+    rm -f "$config_file"
   else
     log_error "$user" "immich-go export failed."
+    rm -f "$config_file"
     return 1
   fi
 }

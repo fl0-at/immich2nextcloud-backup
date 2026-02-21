@@ -6,6 +6,6 @@ services:
     env_file:
       - .env
     volumes:
-      - /srv/immich-exports:/data
+      - ./data:/data
     # Optionally set UID/GID to match host permissions on /data
     # user: "1000:1000"
