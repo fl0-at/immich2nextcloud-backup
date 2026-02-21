@@ -160,12 +160,109 @@ EOF
 
   if run_with_retry "immich-go ($user)" "${cmd[@]}"; then
     log_info "$user" "immich-go export completed successfully."
+    normalize_exports "$user"
+    cleanup_empty_dirs "$user"
     rm -f "$config_file"
   else
     log_error "$user" "immich-go export failed."
     rm -f "$config_file"
     return 1
   fi
+}
+
+# Normalize immich-go exports: rename temp files (e.g. ~1) to the original filename
+# using the accompanying JSON sidecar and place them into YYYY/MM/DD folders.
+normalize_exports() {
+  local user="$1"
+  local export_dir="${DATA_DIR}/${user}"
+
+  # Find all JSON sidecars produced by immich-go
+  find "$export_dir" -type f -name '*.JSON' | while IFS= read -r json; do
+    # corresponding data file (same name without .JSON)
+    data_file="${json%.*}"
+    if [ ! -f "$data_file" ]; then
+      continue
+    fi
+
+    # Only handle temporary export files (e.g. names starting with '~').
+    # Avoid touching files that immich-go already created with correct names.
+    base_name=$(basename "$data_file")
+    case "$base_name" in
+      ~*) ;;
+      *)
+        log_debug "$user" "Skipping $data_file — not a temp export"
+        continue
+        ;;
+    esac
+
+    # extract fileName and dateTaken from JSON
+    file_name=$(sed -n 's/.*"fileName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$json" | head -n1)
+    date_taken=$(sed -n 's/.*"dateTaken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$json" | head -n1)
+
+    if [ -z "$file_name" ] || [ -z "$date_taken" ]; then
+      log_debug "$user" "Skipping $data_file — missing metadata in $json"
+      continue
+    fi
+
+    # parse dateTaken -> YYYY MM DD (ISO 8601 expected)
+    date_part=${date_taken%%T*}
+    IFS=- read -r year month day <<< "$date_part"
+    if [ -z "$year" ] || [ -z "$month" ] || [ -z "$day" ]; then
+      year="unknown"
+      month="unknown"
+      day="unknown"
+    fi
+
+    target_dir="$export_dir/$year/$month/$day"
+    mkdir -p "$target_dir"
+
+    # ensure unique target name
+    target_path="$target_dir/$file_name"
+
+    # If the target already exists, check if it's identical. If identical,
+    # remove the temporary export and its JSON sidecar to avoid creating
+    # duplicate files with a numbered suffix (e.g. _1).
+    if [ -e "$target_path" ]; then
+      if command -v cmp >/dev/null 2>&1; then
+        if cmp -s "$data_file" "$target_path"; then
+          rm -f "$data_file" "$json"
+          log_info "$user" "Skipping identical export (already exists): $target_path"
+          continue
+        fi
+      else
+        # Fallback: compare file sizes
+        if [ "$(stat -c%s "$data_file" 2>/dev/null || echo 0)" = "$(stat -c%s "$target_path" 2>/dev/null || echo 0)" ]; then
+          rm -f "$data_file" "$json"
+          log_info "$user" "Skipping export with identical size (already exists): $target_path"
+          continue
+        fi
+      fi
+
+      basename_noext="${file_name%.*}"
+      ext="${file_name##*.}"
+      if [ "$basename_noext" = "$ext" ]; then
+        # no extension
+        i=1
+        while [ -e "$target_dir/${file_name}.$i" ]; do i=$((i+1)); done
+        target_path="$target_dir/${file_name}.$i"
+      else
+        i=1
+        while [ -e "$target_dir/${basename_noext}_$i.$ext" ]; do i=$((i+1)); done
+        target_path="$target_dir/${basename_noext}_$i.$ext"
+      fi
+    fi
+
+    mv -f "$data_file" "$target_path" && mv -f "$json" "${target_path}.JSON"
+    log_info "$user" "Moved export: $data_file -> ${target_path}"
+  done
+}
+
+# Remove empty leftover directories under a user's export dir
+cleanup_empty_dirs() {
+  local user="$1"
+  local export_dir="${DATA_DIR}/${user}"
+  # Remove directories that are empty
+  find "$export_dir" -type d -empty -print -delete 2>/dev/null || true
 }
 
 # ── Sync to Nextcloud via rclone ─────────────────────────────
