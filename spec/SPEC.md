@@ -55,55 +55,74 @@ The project consists of:
 
 ### High-level flow
 
-Pseudocode for `backup.sh`:
+Pseudocode for `backup.sh` (reflects the current implementation):
 
 ```bash
-read IMMICH_SERVER
-read NC_BASE_URL
-read USER_LIST (space-separated logical user IDs)
+# Validate top-level env vars: IMMICH_SERVER, NC_BASE_URL, USER_LIST
+validate_global_env
 
-for each USER in USER_LIST:
-    derive env var names:
-        IMMICH_API_KEY_<USER>
-        NC_USER_<USER>
-        NC_PASS_<USER> (Nextcloud app password)
+for USER in $USER_LIST; do
+  # validate identifier format and per-user env vars
+  if ! echo "$USER" | grep -qE '^[a-z0-9_-]+$'; then
+    log_warn "" "Invalid user identifier '$USER' - skipping"
+    continue
+  fi
+  if ! validate_user_env "$USER"; then
+    continue
+  fi
 
-    validate all required env vars present
+  # EXPORT: write per-user TOML config and run immich-go with --config
+  write /tmp/immich-go-$USER.toml with [archive] and [archive.from-immich]
+  immich-go archive from-immich --config /tmp/immich-go-$USER.toml
+  if success:
+    normalize_exports "$USER"    # move temp files into YYYY/MM/DD and dedupe
+    cleanup_empty_dirs "$USER"
+  else
+    mark user failure and continue
+  fi
 
-    set USER_EXPORT_DIR="/data/<USER>"
+  # SYNC: create temporary rclone config (obscure password) and run rclone
+  create /tmp/rclone-$USER.conf with webdav url=${NC_BASE_URL}/remote.php/dav/files/${NC_USER_$USER}
+  rclone ${RCLONE_MODE:-sync} /data/$USER/ nextcloud_$USER:Photos/immich-backup --config=/tmp/rclone-$USER.conf ...
+  securely remove /tmp/rclone-$USER.conf (shred if available)
 
-    run immich-go:
-        immich-go archive from-immich \
-          --server="$IMMICH_SERVER" \
-          --from-api-key="$IMMICH_API_KEY_<USER>" \
-          --write-to-folder="$USER_EXPORT_DIR" \
-          --folder-template="YYYY/MM/DD" \
-          --file-template="{originalFileName}"
+  # PRUNE: optionally remove local exports older than PRUNE_AFTER_DAYS
+  prune_old_exports "$USER"
+done
 
-    generate temporary rclone config with:
-        [nextcloud_<USER>]
-        type = webdav
-        url = ${NC_BASE_URL}/remote.php/dav/files/${NC_USER_<USER>}
-        vendor = nextcloud
-        user = ${NC_USER_<USER>}
-        pass = (obscured NC_PASS_<USER>)
-
-    run rclone:
-        rclone sync "$USER_EXPORT_DIR/" "nextcloud_<USER>:Photos/immich-backup" \
-          --config=/tmp/rclone-<USER>.conf \
-          --transfers=4 \
-          --checkers=4 \
-          --bwlimit=8M
-
-    delete temporary rclone config
+# Exit codes:
+# 0 = all users processed without failures
+# 1 = one or more users had failures
+# 2 = fatal configuration error (missing top-level env vars)
 ```
+
+### Implementation detail: immich-go config
+
+The implementation writes a per-user TOML config and invokes `immich-go` with `--config <file>` rather than passing many flags on the CLI. This document keeps the high-level pseudocode above for clarity, but the actual script produces a config similar to the example below:
+
+```toml
+[archive]
+"write-to-folder" = "/data/<user>"
+"folder-template" = "{{DateYear}}/{{DateMonth}}/{{DateDay}}"
+"file-template" = "{{OriginalFileName}}"
+
+[archive.from-immich]
+"from-server" = "${IMMICH_SERVER}"
+"from-api-key" = "${IMMICH_API_KEY_<user>}"
+"from-dry-run" = false
+```
+
+Notes:
+
+- The script uses the `--config` workflow because it allows complex options (dry-run, date tokens) to be written reliably per-user.
+- Template tokens observed in the implementation are `{{DateYear}}`, `{{DateMonth}}`, `{{DateDay}}`, and `{{OriginalFileName}}` (these are the tokens currently emitted by the script).
 
 ### Date-based structure
 
 - `immich-go` must be called with template options so exported media follows:
   - Root: `/data/<user>/`
-  - Subfolders: `YYYY/MM/DD` based on capture date.
-  - Files: original filename where possible.
+  - Subfolders: `{{DateYear}}/{{DateMonth}}/{{DateDay}}` based on capture date (implementation uses these tokens).
+  - Files: `{{OriginalFileName}}` where possible.
 - Resulting Nextcloud path for a user:
   - `Photos/immich-backup/YYYY/MM/DD/<filename>`
 
@@ -235,7 +254,7 @@ The README should include:
 
 The following clarifications and optional settings are recommended to make the implementation safer, more predictable, and easier to automate.
 
-- **Versions & verification**: Add build arg and env references for exact binary versions (for example: `IMMICH_GO_VERSION`, `RCLONE_VERSION`) and verify downloads using SHA256 checksums where available.
+- **Versions & verification**: The `Dockerfile` currently pins `IMMICH_GO_VERSION=0.31.0` (see `Dockerfile` build-args) and exposes an `RCLONE_VERSION` build-arg; document these defaults here and recommend verifying downloaded artifacts using SHA256 checksums where available (download checksum files and compare before installing the binary).
 - **Export strategy / incremental exports**: Specify whether the export is intended to be full every run or incremental. If incremental is desired, add an option such as `IMMICH_EXPORT_SINCE` (date) or a `--since-last-run` mode; otherwise document that full exports may be repeated and rely on `rclone` deduping/compare behavior.
 - **Retention / cleanup**: Define what happens to `/data/<user>` after sync. Add an optional `PRUNE_AFTER_DAYS` env var (integer) or explicit `CLEANUP` toggle so hosts can avoid unbounded disk growth. If enabled, the script should remove local export folders older than `PRUNE_AFTER_DAYS`.
 - **Env var naming and allowed characters**: Constrain `USER_LIST` identifiers so they map predictably to env var names (for example: lowercase `a-z0-9_-` only). Document that identifiers are case-sensitive and will be interpolated literally into `IMMICH_API_KEY_<id>`, `NC_USER_<id>`, and `NC_PASS_<id>`.
@@ -248,7 +267,7 @@ The following clarifications and optional settings are recommended to make the i
 - **Idempotency & deletion behavior**: Make the `RCLONE_MODE` default explicit and conservative. Because `rclone sync` deletes remote files not present locally, document the default and allow opting into `copy` to preserve remote files. Consider making the default `copy` for safety, or require an explicit `RCLONE_MODE=sync` in production setups.
 - **Logging & observability**: Add `LOG_LEVEL` (e.g., `info`, `warn`, `error`, `debug`) and per-user log prefixes and timestamps. Recommend an optional `JSON_LOG` toggle for machine parsing and include a `--dry-run`/`TEST_MODE` that runs `rclone --dry-run` for validation.
 - **Docker image details**: Document target CPU architecture (e.g., amd64) and recommend running the container as a non-root user or mapping UID/GID to avoid permission issues on mounted `/data` volumes. Also mention how to pass `IMMICH_GO_VERSION` as a build-arg.
-- **CLI flag confirmation**: Verify the actual `immich-go` CLI option names used in the pseudocode and document the exact template tokens supported by `immich-go` (e.g., `YYYY`, `MM`, `DD`, `{originalFileName}`) so generated code uses the correct flags.
+- **CLI flag confirmation**: The implementation uses a `--config <file>` TOML for `immich-go` rather than passing many flags on the command line. Document that workflow and the exact template tokens supported by `immich-go` (the script currently uses `{{DateYear}}`, `{{DateMonth}}`, `{{DateDay}}`, and `{{OriginalFileName}}`).
 - **Privacy notice**: Add a short note that exporting user media and storing app passwords is a privacy-sensitive operation and should be done under appropriate policies and host protections.
 
 ## Examples & templates
@@ -259,7 +278,7 @@ Example files are provided for local runs and for templating env values. See `SA
 
 It is planned to introduce further features in future releases, once basic functionality has been tested OK and the project can be considered _solid_.
 
-For now, I'm collecting ideas in a simply unordered list here:
+For now, I'm collecting ideas in a simple unordered list here:
 
 - support for incremental backups instead of just full backups
   - `immich-go` supports syntax like `--from-date-range`

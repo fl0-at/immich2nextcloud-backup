@@ -14,6 +14,8 @@ For each configured user the container will:
 
 The container runs once and exits — scheduling is left to the host (cron, systemd timer, etc.).
 
+Implementation note: the script writes a per-user TOML config file and calls `immich-go` with `--config /tmp/immich-go-<user>.toml` (see `spec/SPEC.md` for an example). Template tokens used by the config are `{{DateYear}}`, `{{DateMonth}}`, `{{DateDay}}` and `{{OriginalFileName}}`.
+
 ## Prerequisites
 
 | Requirement | Notes |
@@ -93,6 +95,11 @@ User identifiers must be lowercase `[a-z0-9_-]` and are used literally to build 
 | `JSON_LOG` | `false` | Output logs as JSON lines for machine parsing |
 | `TEST_MODE` | `false` | Dry-run: skips `immich-go` export, runs `rclone --dry-run` |
 
+Additional notes:
+
+- `IMMICH_GO_VERSION` is available as a Docker build-arg and the project currently uses `0.31.0` by default in the `Dockerfile`. Pin and verify versions when building images.
+- Template tokens used by the runtime TOML config: `{{DateYear}}`, `{{DateMonth}}`, `{{DateDay}}`, `{{OriginalFileName}}`.
+
 ### Volumes
 
 | Container path | Purpose |
@@ -118,7 +125,7 @@ docker compose run --rm immich2nextcloud-backup
 
 ```bash
 docker compose build \
-  --build-arg IMMICH_GO_VERSION=0.24.2 \
+  --build-arg IMMICH_GO_VERSION=0.31.0 \
   --build-arg RCLONE_VERSION=1.69.1
 ```
 
