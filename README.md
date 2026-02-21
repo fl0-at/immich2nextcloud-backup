@@ -8,7 +8,7 @@ Immich remains the primary photo app; Nextcloud acts as a per-user off-site back
 
 For each configured user the container will:
 
-1. **Export** all of the user's photos and videos from Immich via [`immich-go`](https://github.com/simulot/immich-go).
+1. **Export** the user's photos and videos from Immich via [`immich-go`](https://github.com/simulot/immich-go) (full or incremental, depending on env vars).
 2. **Store** the export locally under `/data/<user>/YYYY/MM/DD/<filename>`.
 3. **Sync** (or copy) the local export into the same user's Nextcloud account at `Photos/immich-backup/YYYY/MM/DD/<filename>` via [`rclone`](https://rclone.org) over WebDAV.
 
@@ -88,6 +88,8 @@ User identifiers must be lowercase `[a-z0-9_-]` and are used literally to build 
 | `RCLONE_BWLIMIT` | `8M` | Bandwidth limit for rclone |
 | `RCLONE_TRANSFERS` | `4` | Number of parallel file transfers |
 | `RCLONE_CHECKERS` | `4` | Number of parallel checkers |
+| `IMMICH_FROM_DATE_RANGE` | _(disabled)_ | Pass-through value for `immich-go` `from-date-range`; takes precedence over `IMMICH_INCREMENTAL_DAYS` |
+| `IMMICH_INCREMENTAL_DAYS` | `0` | Incremental window in days (`>0` enables incremental export, `0` or empty keeps full export) |
 | `PRUNE_AFTER_DAYS` | _(disabled)_ | Delete local exports older than N days (0 or empty = disabled) |
 | `RETRY_COUNT` | `0` | Number of retries for transient `immich-go`/`rclone` failures |
 | `RETRY_DELAY_SECONDS` | `10` | Seconds to wait between retries |
@@ -133,6 +135,16 @@ docker compose build \
 
 ```bash
 TEST_MODE=true docker compose run --rm immich2nextcloud-backup
+```
+
+### Incremental export examples
+
+```bash
+# Last 1 day
+IMMICH_INCREMENTAL_DAYS=1 docker compose run --rm immich2nextcloud-backup
+
+# Explicit range (takes precedence over IMMICH_INCREMENTAL_DAYS)
+IMMICH_FROM_DATE_RANGE="2026-02-20,2026-02-21" docker compose run --rm immich2nextcloud-backup
 ```
 
 ### Scheduling with cron
@@ -189,7 +201,7 @@ sudo systemctl enable --now immich-backup.timer
 ## Limitations
 
 - **Media-only backups.** Albums, people, faces, and other Immich metadata are _not_ backed up — only raw photo and video files.
-- **Full export every run.** Each invocation performs a full export from Immich. `rclone` handles deduplication and skips unchanged files on the remote side, so bandwidth is only used for new/changed files.
+- **Default is full export every run.** If no incremental env vars are set, each invocation performs a full export from Immich. You can enable incremental mode with `IMMICH_FROM_DATE_RANGE` or `IMMICH_INCREMENTAL_DAYS`.
 - **No restore tooling.** Recovery is manual — your media files are simply present in Nextcloud as regular files.
 - **amd64 only.** The Docker image downloads amd64 binaries for `rclone` and `immich-go`.
 

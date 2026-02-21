@@ -168,6 +168,12 @@ Per-user (for each entry in `USER_LIST`):
 
 Optional:
 
+- `IMMICH_FROM_DATE_RANGE`
+  - Optional pass-through date range value for `immich-go` (`from-date-range`).
+  - If set, this takes precedence over `IMMICH_INCREMENTAL_DAYS`.
+- `IMMICH_INCREMENTAL_DAYS`
+  - Optional integer window in days for incremental export.
+  - `0` or empty means full export.
 - `RCLONE_BWLIMIT`
   - Bandwidth limit for rclone, e.g. `8M`. Default: `8M`.
 - `RCLONE_TRANSFERS`
@@ -255,7 +261,7 @@ The README should include:
 The following clarifications and optional settings are recommended to make the implementation safer, more predictable, and easier to automate.
 
 - **Versions & verification**: The `Dockerfile` currently pins `IMMICH_GO_VERSION=0.31.0` (see `Dockerfile` build-args) and exposes an `RCLONE_VERSION` build-arg; document these defaults here and recommend verifying downloaded artifacts using SHA256 checksums where available (download checksum files and compare before installing the binary).
-- **Export strategy / incremental exports**: Specify whether the export is intended to be full every run or incremental. If incremental is desired, add an option such as `IMMICH_EXPORT_SINCE` (date) or a `--since-last-run` mode; otherwise document that full exports may be repeated and rely on `rclone` deduping/compare behavior.
+- **Export strategy / incremental exports**: Incremental export support is implemented via `IMMICH_FROM_DATE_RANGE` (explicit pass-through) and `IMMICH_INCREMENTAL_DAYS` (derived date range). Default remains full export when both are unset/zero.
 - **Retention / cleanup**: Define what happens to `/data/<user>` after sync. Add an optional `PRUNE_AFTER_DAYS` env var (integer) or explicit `CLEANUP` toggle so hosts can avoid unbounded disk growth. If enabled, the script should remove local export folders older than `PRUNE_AFTER_DAYS`.
 - **Env var naming and allowed characters**: Constrain `USER_LIST` identifiers so they map predictably to env var names (for example: lowercase `a-z0-9_-` only). Document that identifiers are case-sensitive and will be interpolated literally into `IMMICH_API_KEY_<id>`, `NC_USER_<id>`, and `NC_PASS_<id>`.
 - **Security for credentials**: Document recommended handling for `NC_PASS_*` and `IMMICH_API_KEY_*` (prefer Docker secrets, Docker Compose `secrets`, or a host-mounted `rclone.conf` with restricted permissions). The script must securely erase any temporary `rclone` config files after use (e.g., `shred` or overwrite then remove) and avoid printing secrets to logs.
@@ -281,9 +287,7 @@ It is planned to introduce further features in future releases, once basic funct
 For now, I'm collecting ideas in a simple unordered list here:
 
 - support for incremental backups instead of just full backups
-  - `immich-go` supports syntax like `--from-date-range`
-  - new env vars could be introduced, like:
-    - `IMMICH_FROM_DATE_RANGE`
-    - `IMMICH_INCREMENTAL_DAYS`
-      - i.e. `IMMICH_INCREMENTAL_DAYS=1` meaning "only assets from the last day"
-      - keeping this empty or at 0 will run a _full backup_ instead of _incremental_.
+  - ✅ implemented in current script:
+    - `IMMICH_FROM_DATE_RANGE` (explicit pass-through to `immich-go`)
+    - `IMMICH_INCREMENTAL_DAYS` (`1` means "last day", `0`/empty means full)
+    - precedence: `IMMICH_FROM_DATE_RANGE` overrides `IMMICH_INCREMENTAL_DAYS`

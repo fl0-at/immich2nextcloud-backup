@@ -93,10 +93,37 @@ validate_global_env() {
       missing=1
     fi
   done
+
+  local incremental_days="${IMMICH_INCREMENTAL_DAYS:-}"
+  if [ -n "$incremental_days" ] && ! echo "$incremental_days" | grep -qE '^[0-9]+$'; then
+    log_error "" "IMMICH_INCREMENTAL_DAYS must be a non-negative integer (or empty)."
+    missing=1
+  fi
+
   if [ "$missing" -eq 1 ]; then
     log_error "" "Fatal: missing required global configuration. Exiting."
     exit 2
   fi
+}
+
+resolve_immich_from_date_range() {
+  local explicit_range="${IMMICH_FROM_DATE_RANGE:-}"
+  if [ -n "$explicit_range" ]; then
+    echo "$explicit_range"
+    return 0
+  fi
+
+  local incremental_days="${IMMICH_INCREMENTAL_DAYS:-0}"
+  if [ -z "$incremental_days" ] || [ "$incremental_days" -eq 0 ] 2>/dev/null; then
+    echo ""
+    return 0
+  fi
+
+  local from_date
+  local to_date
+  from_date="$(date -u -d "${incremental_days} days ago" +%F)"
+  to_date="$(date -u +%F)"
+  echo "${from_date},${to_date}"
 }
 
 # ── Validate per-user env vars ───────────────────────────────
@@ -123,6 +150,8 @@ export_immich() {
   local user="$1"
   local api_key_var="IMMICH_API_KEY_${user}"
   local export_dir="${DATA_DIR}/${user}"
+  local from_date_range
+  from_date_range="$(resolve_immich_from_date_range)"
 
   mkdir -p "$export_dir"
 
@@ -145,6 +174,14 @@ export_immich() {
 "from-api-key" = "${!api_key_var}"
 "from-dry-run" = ${dry_run_flag}
 EOF
+
+  if [ -n "$from_date_range" ]; then
+    printf '"from-date-range" = "%s"\n' "$from_date_range" >> "$config_file"
+    log_info "$user" "Incremental export enabled (from-date-range=${from_date_range})."
+  else
+    log_debug "$user" "Incremental export disabled (full export)."
+  fi
+
   chmod 600 "$config_file"
 
   local cmd=(
@@ -404,6 +441,13 @@ main() {
   log_info "" "Users         : ${USER_LIST}"
   log_info "" "Rclone mode   : ${RCLONE_MODE:-sync}"
   log_info "" "Test mode     : ${TEST_MODE}"
+  if [ -n "${IMMICH_FROM_DATE_RANGE:-}" ]; then
+    log_info "" "Incremental   : from-date-range='${IMMICH_FROM_DATE_RANGE}'"
+  elif [ -n "${IMMICH_INCREMENTAL_DAYS:-}" ] && [ "${IMMICH_INCREMENTAL_DAYS}" -gt 0 ] 2>/dev/null; then
+    log_info "" "Incremental   : last ${IMMICH_INCREMENTAL_DAYS} day(s)"
+  else
+    log_info "" "Incremental   : disabled (full export)"
+  fi
   log_debug "" "Retry count   : ${RETRY_COUNT}"
   log_debug "" "Retry delay   : ${RETRY_DELAY_SECONDS}s"
 
