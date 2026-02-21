@@ -16,6 +16,17 @@ The container runs once and exits — scheduling is left to the host (cron, syst
 
 Implementation note: the script writes a per-user TOML config file and calls `immich-go` with `--config /tmp/immich-go-<user>.toml` (see `spec/SPEC.md` for an example). Template tokens used by the config are `{{DateYear}}`, `{{DateMonth}}`, `{{DateDay}}` and `{{OriginalFileName}}`.
 
+Normalization & deduplication
+
+Before uploading, the script normalizes `immich-go` exports produced as temporary files and JSON sidecars. For each temporary export (data file names beginning with `~`) the script:
+
+- reads the accompanying `.JSON` sidecar to obtain the original filename and `dateTaken`;
+- moves the data file into the correct date-based folder (`/data/<user>/YYYY/MM/DD/`) and renames it to the original filename; the sidecar is moved to `<filename>.JSON` alongside the file;
+- if a target file already exists the script compares the two files (using `cmp` when available, otherwise a file-size fallback) and, if identical, removes the temporary export and its sidecar to avoid duplicates;
+- if not identical, the script generates a unique filename by appending a numeric suffix to avoid collisions.
+
+This normalization step runs before `rclone` so the remote receives correctly named files in the date-based layout and duplicate uploads are minimized.
+
 ## Prerequisites
 
 | Requirement | Notes |
@@ -91,6 +102,7 @@ User identifiers must be lowercase `[a-z0-9_-]` and are used literally to build 
 | `IMMICH_FROM_DATE_RANGE` | _(disabled)_ | Pass-through value for `immich-go` `from-date-range`; takes precedence over `IMMICH_INCREMENTAL_DAYS` |
 | `IMMICH_INCREMENTAL_DAYS` | `0` | Incremental window in days (`>0` enables incremental export, `0` or empty keeps full export) |
 | `PRUNE_AFTER_DAYS` | _(disabled)_ | Delete local exports older than N days (0 or empty = disabled) |
+| `DELETE_LOCAL_AFTER_RUN` | `false` | Delete all local exports for a user after a successful sync (`true`/`1`/`yes` to enable) |
 | `RETRY_COUNT` | `0` | Number of retries for transient `immich-go`/`rclone` failures |
 | `RETRY_DELAY_SECONDS` | `10` | Seconds to wait between retries |
 | `LOG_LEVEL` | `info` | Logging verbosity: `debug`, `info`, `warn`, `error` |

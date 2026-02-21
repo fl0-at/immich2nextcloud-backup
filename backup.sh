@@ -58,6 +58,13 @@ DATA_DIR="/data"
 HAD_FAILURES=0   # set to 1 if any per-user step fails
 TEST_MODE="${TEST_MODE:-false}"
 
+is_truthy() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # ── Retry helper ─────────────────────────────────────────────
 
 RETRY_COUNT="${RETRY_COUNT:-0}"
@@ -97,6 +104,12 @@ validate_global_env() {
   local incremental_days="${IMMICH_INCREMENTAL_DAYS:-}"
   if [ -n "$incremental_days" ] && ! echo "$incremental_days" | grep -qE '^[0-9]+$'; then
     log_error "" "IMMICH_INCREMENTAL_DAYS must be a non-negative integer (or empty)."
+    missing=1
+  fi
+
+  local cleanup_after_run="${DELETE_LOCAL_AFTER_RUN:-false}"
+  if ! echo "$cleanup_after_run" | grep -qE '^(1|0|true|false|TRUE|FALSE|yes|no|YES|NO|on|off|ON|OFF)$'; then
+    log_error "" "DELETE_LOCAL_AFTER_RUN must be a boolean-like value (true/false, 1/0, yes/no, on/off)."
     missing=1
   fi
 
@@ -395,6 +408,27 @@ prune_old_exports() {
   log_info "$user" "Pruning completed."
 }
 
+# ── Optional full cleanup after successful sync ─────────────
+
+delete_local_exports_after_run() {
+  local user="$1"
+  local export_dir="${DATA_DIR}/${user}"
+
+  if ! is_truthy "${DELETE_LOCAL_AFTER_RUN:-false}"; then
+    return 0
+  fi
+
+  if [ "$TEST_MODE" = "true" ]; then
+    log_info "$user" "[dry-run] Would delete local exports in ${export_dir} after successful sync."
+    return 0
+  fi
+
+  log_info "$user" "DELETE_LOCAL_AFTER_RUN enabled: deleting local exports in ${export_dir} ..."
+  find "$export_dir" -mindepth 1 -delete 2>/dev/null || true
+  mkdir -p "$export_dir"
+  log_info "$user" "Local export cleanup completed."
+}
+
 # ── Process a single user ────────────────────────────────────
 
 process_user() {
@@ -416,6 +450,8 @@ process_user() {
   if [ "$user_failed" -eq 0 ]; then
     if ! sync_to_nextcloud "$user"; then
       user_failed=1
+    else
+      delete_local_exports_after_run "$user"
     fi
   fi
 
@@ -441,6 +477,7 @@ main() {
   log_info "" "Users         : ${USER_LIST}"
   log_info "" "Rclone mode   : ${RCLONE_MODE:-sync}"
   log_info "" "Test mode     : ${TEST_MODE}"
+  log_info "" "Local cleanup : ${DELETE_LOCAL_AFTER_RUN:-false}"
   if [ -n "${IMMICH_FROM_DATE_RANGE:-}" ]; then
     log_info "" "Incremental   : from-date-range='${IMMICH_FROM_DATE_RANGE}'"
   elif [ -n "${IMMICH_INCREMENTAL_DAYS:-}" ] && [ "${IMMICH_INCREMENTAL_DAYS}" -gt 0 ] 2>/dev/null; then

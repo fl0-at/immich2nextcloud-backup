@@ -291,3 +291,8 @@ For now, I'm collecting ideas in a simple unordered list here:
     - `IMMICH_FROM_DATE_RANGE` (explicit pass-through to `immich-go`)
     - `IMMICH_INCREMENTAL_DAYS` (`1` means "last day", `0`/empty means full)
     - precedence: `IMMICH_FROM_DATE_RANGE` overrides `IMMICH_INCREMENTAL_DAYS`
+- flag to allow for deletion of local files in data directory after each run
+  - ✅ implemented in current script:
+    - `DELETE_LOCAL_AFTER_RUN` (boolean-like; default `false`)
+    - local exports are deleted only after a successful per-user sync
+    - in `TEST_MODE=true`, cleanup logs intent but does not delete files
