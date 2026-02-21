@@ -1,0 +1,11 @@
+services:
+  immich2nextcloud-backup:
+    build: .
+    # image: your-dockerhub-user/immich2nextcloud-backup:latest
+    restart: "no"
+    env_file:
+      - .env
+    volumes:
+      - /srv/immich-exports:/data
+    # Optionally set UID/GID to match host permissions on /data
+    # user: "1000:1000"
